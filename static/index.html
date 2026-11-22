@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body   { font-family: Arial, sans-serif; background: #f3f4f6; margin: 0; padding: 20px; color: #1f2937; }
+    h1     { margin: 0 0 12px; }
+    .box   { background: #fff; padding: 14px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    .filters { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; align-items: flex-end; }
+    .filters label { display: flex; flex-direction: column; font-size: 12px; color: #64748b; gap: 3px; }
+    .filters select, .filters input { padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    button { padding: 8px 14px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    .kpis  { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpis .title { font-size: 12px; color: #64748b; }
+    .kpis .value { font-size: 26px; font-weight: bold; margin-top: 4px; }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
+    h3 { margin: 0 0 8px; font-size: 14px; color: #334155; }
+  </style>
+</head>
+<body>
+  <h1>Sales Dashboard</h1>
+
+  <!-- 1. FILTERS (6 filters: date from, date to, category, segment, city, status) -->
+  <div class="box filters">
+    <label>From <input type="date" id="start"></label>
+    <label>To <input type="date" id="end"></label>
+    <label>Category <select id="category"></select></label>
+    <label>Segment <select id="segment"></select></label>
+    <label>City <select id="city"></select></label>
+    <label>Order status <select id="status"></select></label>
+    <button onclick="resetFilters()">Reset</button>
+  </div>
+
+  <!-- 2. KPI CARDS -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- 3. CHARTS -->
+  <div class="charts">
+    <div class="box"><h3>Monthly revenue trend</h3><canvas id="monthly"></canvas></div>
+    <div class="box"><h3>Revenue by product category</h3><canvas id="category_chart"></canvas></div>
+    <div class="box"><h3>Revenue by customer segment</h3><canvas id="segment_chart"></canvas></div>
+    <div class="box"><h3>Revenue by city</h3><canvas id="city_chart"></canvas></div>
+    <div class="box"><h3>Order count by status</h3><canvas id="status_chart"></canvas></div>
+    <div class="box"><h3>Top 5 products (revenue)</h3><canvas id="top_chart"></canvas></div>
+  </div>
+
+<script>
+const FILTER_IDS = ["start", "end", "category", "segment", "city", "status"];
+const COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2", "#db2777"];
+const STATUS_COLORS = { Completed: "#16a34a", Returned: "#f59e0b", Cancelled: "#dc2626" };
+const charts = {};                                   // keeps chart objects so we can redraw them
+
+const rupees = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
+
+// Draw (or redraw) one chart
+function drawChart(canvasId, type, rows, field, horizontal = false) {
+  if (charts[canvasId]) charts[canvasId].destroy();  // remove the old chart first
+  const labels = rows.map(r => r.label);
+  const colors = canvasId === "status_chart" ? labels.map(l => STATUS_COLORS[l]) : COLORS;
+  charts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type: type,
+    data: { labels: labels,
+            datasets: [{ data: rows.map(r => r[field]),
+                         backgroundColor: type === "line" ? "#2563eb" : colors,
+                         borderColor: "#2563eb" }] },
+    options: { indexAxis: horizontal ? "y" : "x",
+               plugins: { legend: { display: type === "pie" || type === "doughnut" } } }
+  });
+}
+
+// Read the chosen filters and build the URL, e.g. /api/dashboard?category=Office&status=Returned
+function buildUrl() {
+  const params = new URLSearchParams();
+  FILTER_IDS.forEach(id => {
+    const value = document.getElementById(id).value;
+    if (value) params.set(id, value);
+  });
+  return "/api/dashboard?" + params.toString();
+}
+
+// Get data from the API and update everything on the page
+async function loadData() {
+  const data = await (await fetch(buildUrl())).json();
+  const k = data.kpi;
+  document.getElementById("kpis").innerHTML = [
+    ["Total net revenue", rupees(k.revenue)],
+    ["Total orders", k.orders],
+    ["Unique customers", k.customers],
+    ["Average order value", rupees(k.aov)],
+    ["Repeat customers", k.repeat_customers],
+  ].map(([title, value]) =>
+    `<div class="box"><div class="title">${title}</div><div class="value">${value}</div></div>`).join("");
+
+  drawChart("monthly", "line", data.monthly, "revenue");
+  drawChart("category_chart", "bar", data.category, "revenue");
+  drawChart("segment_chart", "pie", data.segment, "revenue");
+  drawChart("city_chart", "bar", data.city, "revenue", true);
+  drawChart("status_chart", "doughnut", data.status, "orders");
+  drawChart("top_chart", "bar", data.top_products, "revenue", true);
+}
+
+function resetFilters() {
+  FILTER_IDS.forEach(id => document.getElementById(id).value = "");
+  loadData();
+}
+
+// Runs once when the page opens: fill the dropdowns, then load the data
+async function init() {
+  const options = await (await fetch("/api/filters")).json();
+  ["category", "segment", "city", "status"].forEach(id => {
+    document.getElementById(id).innerHTML =
+      "<option value=''>All</option>" + options[id].map(v => `<option>${v}</option>`).join("");
+  });
+  document.getElementById("start").min = document.getElementById("end").min = options.min_date;
+  document.getElementById("start").max = document.getElementById("end").max = options.max_date;
+  FILTER_IDS.forEach(id => document.getElementById(id).addEventListener("change", loadData));  // update on every change
+  loadData();
+}
+init();
+</script>
+</body>
+</html>
