@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Sales Dashboard (Excel -> SQL database -> FastAPI -> HTML dashboard)
 
 ## Tools used
@@ -48,3 +49,6 @@ Filters (6): date from, date to, category, segment, city, order status. All filt
 - "Unique customers" counts customers who have at least one order in the current filter (59 of 60 overall; one customer has never ordered).
 - Data checks before loading: no duplicate IDs, every order has a valid customer.
 - SQLite stores dates as text `YYYY-MM-DD`; PostgreSQL would use a DATE type.
+=======
+# Sales_Dashboard-Project
+>>>>>>> f45b1ca30455fa3703c4a015fe589a4e2c759ac6
